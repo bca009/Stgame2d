@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Defiant vs Son'a</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; }
+        canvas { display: block; margin: 0 auto; border: 2px solid #444; }
+    </style>
+</head>
+<body>
+<script>
+const config = {
+    type: Phaser.AUTO,
+    width: 800,
+    height: 600,
+    physics: { default: 'arcade', arcade: { gravity: { y: 0 } } },
+    scene: { preload: preload, create: create, update: update }
+};
+
+const game = new Phaser.Game(config);
+let player, enemy, bullets, enemyBullets, score = 0, scoreText;
+
+function preload() {
+    // Using shapes/colors since we can't bundle external assets easily.
+}
+
+function create() {
+    // Starfield background
+    for (let i = 0; i < 100; i++) {
+        this.add.circle(Math.random() * 800, Math.random() * 600, 1, 0xffffff);
+    }
+
+    // Build textures once
+    const shipGraphic = this.add.graphics({ fillStyle: { color: 0xcccccc } });
+    shipGraphic.fillTriangle(15, 0, 0, 35, 30, 35);
+    shipGraphic.generateTexture('ship', 30, 40);
+    shipGraphic.destroy();
+
+    const enemyGraphic = this.add.graphics({ fillStyle: { color: 0xff4400 } });
+    enemyGraphic.fillRect(0, 0, 60, 30);
+    enemyGraphic.generateTexture('sona', 60, 30);
+    enemyGraphic.destroy();
+
+    const pulseGraphic = this.add.graphics({ fillStyle: { color: 0x00ffff } });
+    pulseGraphic.fillRect(0, 0, 4, 15);
+    pulseGraphic.generateTexture('pulse', 4, 15);
+    pulseGraphic.destroy();
+
+    const isolyticGraphic = this.add.graphics({ fillStyle: { color: 0xff0000 } });
+    isolyticGraphic.fillCircle(5, 5, 5);
+    isolyticGraphic.generateTexture('isolytic', 10, 10);
+    isolyticGraphic.destroy();
+
+    // Player: Defiant-class (Silver Triangle)
+    player = this.physics.add.sprite(400, 500, 'ship');
+    player.setCollideWorldBounds(true);
+
+    // Enemy: Son'a Cruiser (Orange Rectangle)
+    enemy = this.physics.add.sprite(400, 100, 'sona');
+    enemy.setImmovable(true);
+
+    // Weapons
+    bullets = this.physics.add.group();
+    enemyBullets = this.physics.add.group();
+
+    scoreText = this.add.text(16, 16, 'Son\'a Hull: 100%', { fontSize: '20px', fill: '#0f0', fontFamily: 'monospace' });
+
+    // Click to fire
+    this.input.on('pointerdown', () => {
+        const bullet = bullets.create(player.x, player.y - 20, 'pulse');
+        bullet.setVelocityY(-400);
+    });
+
+    // Collisions
+    this.physics.add.overlap(bullets, enemy, (bullet, target) => {
+        bullet.destroy();
+        score += 5;
+        const hull = Math.max(0, 100 - (score / 5));
+        scoreText.setText("Son'a Hull: " + hull + '%');
+
+        if (score >= 500 && target.active) {
+            scoreText.setText('TARGET NEUTRALIZED. VICTORY.');
+            target.destroy();
+        }
+    });
+}
+
+function update() {
+    // Follow Mouse/Finger
+    player.x = Phaser.Math.Linear(player.x, this.input.activePointer.x, 0.1);
+    player.y = Phaser.Math.Linear(player.y, this.input.activePointer.y, 0.1);
+
+    // Simple AI movement
+    if (enemy && enemy.active) {
+        enemy.x += Math.sin(this.time.now / 500) * 2;
+    }
+
+    // Enemy firing
+    if (enemy && enemy.active && Math.random() > 0.98) {
+        const eb = enemyBullets.create(enemy.x, enemy.y + 20, 'isolytic');
+        eb.setVelocityY(200);
+    }
+}
+</script>
+</body>
+</html>

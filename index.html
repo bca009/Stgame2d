@@ -1,109 +1,481 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Defiant vs Son'a</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Defiant: Final Command</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; }
-        canvas { display: block; margin: 0 auto; border: 2px solid #444; }
+        body {
+            margin: 0; background: #000; overflow: hidden;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; width: 100vw; color: #00ccff;
+            font-family: 'Segoe UI', sans-serif; touch-action: none; user-select: none;
+        }
+        #game-container { width: 100%; height: 100%; }
+
+        .ui-overlay {
+            position: absolute; top: 20px; left: 20px;
+            pointer-events: none; text-shadow: 0 0 10px #00ccff; z-index: 10;
+            font-size: 16px; font-weight: bold;
+        }
+        .status-row { margin-bottom: 4px; }
+        .multiplier { color: #ffd700; font-size: 18px; }
+
+        #tactical-alert {
+            position: absolute; top: 25%; width: 100%; text-align: center;
+            font-size: 28px; font-weight: 900; color: #ff3300;
+            text-shadow: 0 0 15px red; display: none; z-index: 15;
+            animation: pulse 0.5s infinite alternate;
+        }
+        @keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
+
+        .tiny-btn {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(255, 0, 0, 0.2); border: 1px solid #ff3300;
+            color: #ff3300; padding: 10px 20px; font-size: 12px; font-weight: bold;
+            border-radius: 4px; cursor: pointer; pointer-events: auto; z-index: 30;
+        }
+
+        .controls {
+            position: absolute; bottom: 20px; width: 100%;
+            display: flex; flex-direction: column; align-items: center; gap: 12px;
+            z-index: 20; pointer-events: none;
+        }
+
+        .big-toggle {
+            width: 240px; height: 65px; background: rgba(0, 204, 255, 0.1);
+            border: 2px solid #00ccff; border-radius: 32px; color: #00ccff;
+            font-size: 18px; font-weight: bold; display: flex; justify-content: center;
+            align-items: center; cursor: pointer; pointer-events: auto;
+            backdrop-filter: blur(5px); transition: 0.2s;
+        }
+        .big-toggle.active { background: #ff3300; border-color: #fff; color: #fff; box-shadow: 0 0 20px #ff3300; }
+
+        #torpedo-bar {
+            width: 300px; height: 12px; background: rgba(0,0,0,0.5);
+            border: 1px solid #444; border-radius: 6px; overflow: hidden; position: relative;
+        }
+        #torpedo-fill { width: 0%; height: 100%; background: #00ccff; box-shadow: 0 0 10px #00ccff; }
+
+        #decision-overlay {
+            display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.9);
+            flex-direction: column; justify-content: center; align-items: center; z-index: 100;
+        }
+        .upgrade-grid { display: flex; gap: 20px; width: 90%; max-width: 900px; }
+        .card {
+            flex: 1; height: 220px; background: rgba(0, 40, 80, 0.8);
+            border: 2px solid #00ccff; border-radius: 12px; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 15px; text-align: center; pointer-events: auto; transition: 0.1s;
+        }
+        .card:hover { transform: translateY(-5px); border-color: #fff; }
+        .card h3 { margin: 0 0 10px 0; color: #fff; font-size: 18px; }
+        .card p { margin: 0; font-size: 13px; color: #aaa; }
+        .card.elite { border-color: #a855f7; box-shadow: 0 0 20px #a855f7; background: rgba(40, 0, 80, 0.8); }
     </style>
 </head>
 <body>
-<script>
-const config = {
-    type: Phaser.AUTO,
-    width: 800,
-    height: 600,
-    physics: { default: 'arcade', arcade: { gravity: { y: 0 } } },
-    scene: { preload: preload, create: create, update: update }
-};
 
-const game = new Phaser.Game(config);
-let player, enemy, bullets, enemyBullets, score = 0, scoreText;
+    <div class="ui-overlay">
+        <div class="status-row">SCORE: <span id="score">0</span></div>
+        <div class="status-row multiplier" id="threat">THREAT LEVEL: 1x</div>
+        <div class="status-row" id="shields">SHIELDS: 100%</div>
+        <div class="status-row" id="wave-text" style="color: #ff0055;">WAVE 1</div>
+        <div class="status-row" id="ally-status" style="font-size: 12px; opacity: 0.8;">ALLIES: STANDBY</div>
+    </div>
 
-function preload() {
-    // Using shapes/colors since we can't bundle external assets easily.
-}
+    <div id="tactical-alert">HEAVY SIGNATURE DETECTED</div>
+    <div id="btn-reset" class="tiny-btn">HARD RESET</div>
 
-function create() {
-    // Starfield background
-    for (let i = 0; i < 100; i++) {
-        this.add.circle(Math.random() * 800, Math.random() * 600, 1, 0xffffff);
-    }
+    <div id="decision-overlay">
+        <h1 style="color: #ffd700; margin-bottom: 30px;">WAVE CLEAR - SELECT UPGRADE</h1>
+        <div class="upgrade-grid" id="upgrade-slots"></div>
+    </div>
 
-    // Build textures once
-    const shipGraphic = this.add.graphics({ fillStyle: { color: 0xcccccc } });
-    shipGraphic.fillTriangle(15, 0, 0, 35, 30, 35);
-    shipGraphic.generateTexture('ship', 30, 40);
-    shipGraphic.destroy();
+    <div class="controls">
+        <div id="torpedo-bar"><div id="torpedo-fill"></div></div>
+        <div class="big-toggle" id="btn-auto">ENGAGE AUTO-PILOT</div>
+    </div>
 
-    const enemyGraphic = this.add.graphics({ fillStyle: { color: 0xff4400 } });
-    enemyGraphic.fillRect(0, 0, 60, 30);
-    enemyGraphic.generateTexture('sona', 60, 30);
-    enemyGraphic.destroy();
+    <div id="game-container"></div>
 
-    const pulseGraphic = this.add.graphics({ fillStyle: { color: 0x00ffff } });
-    pulseGraphic.fillRect(0, 0, 4, 15);
-    pulseGraphic.generateTexture('pulse', 4, 15);
-    pulseGraphic.destroy();
+    <script>
+        // --- CONSTANTS ---
+        const config = {
+            type: Phaser.AUTO,
+            width: 800, height: 600,
+            parent: 'game-container', transparent: true,
+            physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
+            scene: { preload: preload, create: create, update: update }
+        };
 
-    const isolyticGraphic = this.add.graphics({ fillStyle: { color: 0xff0000 } });
-    isolyticGraphic.fillCircle(5, 5, 5);
-    isolyticGraphic.generateTexture('isolytic', 10, 10);
-    isolyticGraphic.destroy();
+        const UPGRADES = [
+            { id: 'fire', title: 'Overcharge', desc: 'Phaser rate +20%', color: 'btn-red' },
+            { id: 'speed', title: 'Impulse', desc: 'Maneuverability +25%', color: 'btn-blue' },
+            { id: 'shields', title: 'Reinforce', desc: '+50 Max Shields', color: 'btn-green' },
+            { id: 'repair', title: 'Hull Repair', desc: 'Fix 50% damage', color: 'btn-green' },
+            { id: 'torp', title: 'Q-Loader', desc: 'Torpedo charge +30%', color: 'btn-blue' }
+        ];
 
-    // Player: Defiant-class (Silver Triangle)
-    player = this.physics.add.sprite(400, 500, 'ship');
-    player.setCollideWorldBounds(true);
+        const ELITE = [
+            { id: 'ablative', title: 'Ablative Armor', desc: '+250 Max Shields', elite: true },
+            { id: 'spread', title: 'Torp Spread', desc: 'Launch 3 torpedoes', elite: true },
+            { id: 'plasma', title: 'Plasma Storm', desc: 'Plasma fires 2x faster', elite: true }
+        ];
 
-    // Enemy: Son'a Cruiser (Orange Rectangle)
-    enemy = this.physics.add.sprite(400, 100, 'sona');
-    enemy.setImmovable(true);
+        // --- STATE ---
+        let gameActive = false, isPaused = false, currentWave = 1, score = 0;
+        let shields = 100, maxShields = 100, torpedoCharge = 0, nextWaveScore = 1500;
+        let pRate = 150, sRate = 450, tRate = 0.25, pAgility = 6, tCount = 1;
+        let hpMult = 1.0, threat = 1, isWaveEnding = false;
+        let formationDelay = 3000; // FIX: Was undefined in original code
 
-    // Weapons
-    bullets = this.physics.add.group();
-    enemyBullets = this.physics.add.group();
+        let player, playerBullets, enemyBullets, enemies, allies, stars, gameScene;
+        let lastPulse = 0, lastPlasma = 0, spawnTimer = 0;
 
-    scoreText = this.add.text(16, 16, 'Son\'a Hull: 100%', { fontSize: '20px', fill: '#0f0', fontFamily: 'monospace' });
+        const game = new Phaser.Game(config);
 
-    // Click to fire
-    this.input.on('pointerdown', () => {
-        const bullet = bullets.create(player.x, player.y - 20, 'pulse');
-        bullet.setVelocityY(-400);
-    });
+        function preload() {}
 
-    // Collisions
-    this.physics.add.overlap(bullets, enemy, (bullet, target) => {
-        bullet.destroy();
-        score += 5;
-        const hull = Math.max(0, 100 - (score / 5));
-        scoreText.setText("Son'a Hull: " + hull + '%');
+        function create() {
+            gameScene = this;
 
-        if (score >= 500 && target.active) {
-            scoreText.setText('TARGET NEUTRALIZED. VICTORY.');
-            target.destroy();
+            // 1. Texture Assets
+            const g = gameScene.add.graphics();
+
+            // Defiant
+            g.fillStyle(0x999999).lineStyle(2, 0xffffff).beginPath().moveTo(20,0).lineTo(40,15).lineTo(40,40).lineTo(0,40).lineTo(0,15).closePath().fillPath().strokePath().generateTexture('defiant', 40, 50).clear();
+            // Flyer
+            g.fillStyle(0x88ccff).lineStyle(1, 0xffffff).beginPath().moveTo(10,0).lineTo(20,30).lineTo(10,25).lineTo(0,30).closePath().fillPath().strokePath().generateTexture('flyer', 20, 30).clear();
+            // Escort
+            g.fillStyle(0x334455).lineStyle(2, 0x99bbff).beginPath().moveTo(0,15).lineTo(30,0).lineTo(60,15).lineTo(30,30).closePath().fillPath().strokePath().generateTexture('escort', 60, 30).clear();
+            // Scout
+            g.fillStyle(0x442200).lineStyle(2, 0xffaa00).beginPath().moveTo(15,30).lineTo(30,0).lineTo(0,0).closePath().fillPath().strokePath().generateTexture('scout', 30, 30).clear();
+            // Cruiser
+            g.fillStyle(0x441111).lineStyle(2, 0xff3333).beginPath().moveTo(0,0).lineTo(50,0).lineTo(50,20).lineTo(25,30).lineTo(0,20).closePath().fillPath().strokePath().generateTexture('cruiser', 50, 30).clear();
+            // Battleship
+            g.fillStyle(0x330044).lineStyle(2, 0xaa33ff).beginPath().moveTo(10,0).lineTo(70,0).lineTo(80,20).lineTo(40,50).lineTo(0,20).closePath().fillPath().strokePath().generateTexture('battleship', 80, 50).clear();
+
+            g.fillStyle(0xffffff).fillCircle(1,1,1).generateTexture('star', 2, 2).clear();
+            g.fillStyle(0xffcc00).fillRect(0,0,4,12).generateTexture('p_bolt', 4, 12).clear();
+            g.fillStyle(0x00ff66).fillCircle(4,4,4).generateTexture('s_bolt', 8, 8).clear();
+            g.fillStyle(0x00ccff).fillCircle(6,6,6).generateTexture('t_bolt', 12, 12).clear();
+            g.fillStyle(0xff3300).fillCircle(3,3,3).generateTexture('e_bolt', 6, 6).clear();
+
+            // 2. Setup
+            stars = gameScene.add.group();
+            for(let i=0; i<80; i++) stars.add(gameScene.add.image(Math.random()*800, Math.random()*600, 'star').setAlpha(Math.random()));
+
+            playerBullets = gameScene.physics.add.group({ defaultKey: 'p_bolt', maxSize: 200 });
+            enemyBullets = gameScene.physics.add.group({ defaultKey: 'e_bolt', maxSize: 200 });
+            enemies = gameScene.physics.add.group();
+            allies = gameScene.physics.add.group();
+
+            player = gameScene.physics.add.sprite(400, 500, 'defiant').setCollideWorldBounds(true).setDrag(1200).setDepth(10);
+
+            // 3. Collisions
+            gameScene.physics.add.overlap(playerBullets, enemies, (bolt, enemy) => {
+                if (!bolt.active || !enemy.active) return;
+                deactivate(bolt);
+                damageEnemy(enemy, 1);
+            });
+            gameScene.physics.add.overlap(player, enemyBullets, (p, bolt) => {
+                if (!bolt.active) return;
+                deactivate(bolt);
+                hitPlayer(10);
+            });
+            gameScene.physics.add.overlap(player, enemies, (p, enemy) => {
+                if (!enemy.active) return;
+                damageEnemy(enemy, 10);
+                hitPlayer(30);
+            });
+
+            // 4. UI Actions
+            document.getElementById('btn-auto').addEventListener('click', toggleAuto);
+            document.getElementById('btn-reset').addEventListener('click', () => window.location.reload());
         }
-    });
-}
 
-function update() {
-    // Follow Mouse/Finger
-    player.x = Phaser.Math.Linear(player.x, this.input.activePointer.x, 0.1);
-    player.y = Phaser.Math.Linear(player.y, this.input.activePointer.y, 0.1);
+        function update(time, delta) {
+            if (isPaused) return;
 
-    // Simple AI movement
-    if (enemy && enemy.active) {
-        enemy.x += Math.sin(this.time.now / 500) * 2;
-    }
+            stars.children.each(s => {
+                s.y += 2; if(s.y > 600) s.y = -10;
+            });
 
-    // Enemy firing
-    if (enemy && enemy.active && Math.random() > 0.98) {
-        const eb = enemyBullets.create(enemy.x, enemy.y + 20, 'isolytic');
-        eb.setVelocityY(200);
-    }
-}
-</script>
+            if (!gameActive) {
+                player.setVelocity(0,0);
+                return;
+            }
+
+            handleAutoPilot(time);
+            handleAllies(time);
+            handleEnemies(time);
+            updateUI();
+
+            // Pooled Cleanup
+            [playerBullets, enemyBullets, enemies].forEach(group => {
+                group.children.each(obj => {
+                    if (obj.active && (obj.y < -150 || obj.y > 750 || obj.x < -150 || obj.x > 950)) {
+                        deactivate(obj);
+                    }
+                });
+            });
+        }
+
+        function deactivate(obj) {
+            obj.setActive(false).setVisible(false);
+            if (obj.body) {
+                obj.body.enable = false;
+                obj.body.setVelocity(0, 0);
+            }
+            if(obj.shootTimer) obj.shootTimer.remove();
+        }
+
+        function toggleAuto() {
+            gameActive = !gameActive;
+            const btn = document.getElementById('btn-auto');
+            btn.classList.toggle('active', gameActive);
+            btn.innerText = gameActive ? "DISENGAGE" : "ENGAGE AUTO-PILOT";
+
+            // Force first spawn if game just started
+            if(gameActive && spawnTimer <= 0) spawnTimer = 1;
+            if(gameActive && allies.countActive() === 0) spawnDeltaFlyer();
+        }
+
+        function handleAutoPilot(time) {
+            let target = null;
+            enemies.children.each(e => { if(e.active && (!target || e.y > target.y)) target = e; });
+
+            if (target) {
+                let destY = target.y < 250 ? 400 : 520;
+                player.body.velocity.x = (target.x - player.x) * pAgility;
+                player.body.velocity.y = (destY - player.y) * pAgility;
+
+                if (time > lastPulse) {
+                    fireBolt(player.x, player.y - 20, 0, -800, 'p_bolt', 0xffcc00);
+                    lastPulse = time + pRate;
+                }
+                if (time > lastPlasma) {
+                    for(let i=-1; i<=1; i++) fireBolt(player.x, player.y - 20, i*120, -600, 's_bolt', 0x00ff66);
+                    lastPlasma = time + sRate;
+                }
+            } else {
+                player.setVelocity(0,0);
+            }
+
+            torpedoCharge = Math.min(100, torpedoCharge + tRate);
+            if (torpedoCharge >= 100) {
+                launchQuantum();
+                torpedoCharge = 0;
+            }
+        }
+
+        function fireBolt(x, y, vx, vy, key, tint) {
+            let b = playerBullets.get(x, y, key);
+            if (b) {
+                b.setActive(true).setVisible(true).setTint(tint).setDepth(2);
+                b.body.enable = true;
+                b.body.reset(x, y);
+                b.body.setVelocity(vx, vy);
+            }
+        }
+
+        function launchQuantum() {
+            if (tCount === 1) {
+                fireBolt(player.x, player.y - 20, 0, -500, 't_bolt', 0x00ccff);
+            } else {
+                for(let i=-1; i<=1; i++) fireBolt(player.x, player.y - 20, i * 180, -500, 't_bolt', 0x00ccff);
+            }
+            gameScene.cameras.main.shake(200, 0.01);
+        }
+
+        function handleEnemies(time) {
+            spawnTimer -= 16; // Approx delta
+            if (spawnTimer <= 0) {
+                spawnWave();
+                spawnTimer = formationDelay;
+            }
+
+            enemies.children.each(e => {
+                if (!e.active) return;
+                e.age = (e.age || 0) + 1;
+                if (e.pattern === 'sine') e.body.velocity.x = Math.sin(e.age / 25) * 200;
+                else if (e.pattern === 'seek' && e.y < 350) {
+                    e.body.velocity.x = (player.x - e.x) * 0.8;
+                }
+            });
+        }
+
+        function spawnWave() {
+            const x = Math.random() * 600 + 100;
+            let type = 'scout', pattern = 'sine';
+            let roll = Math.random();
+
+            if (currentWave >= 5 && roll > 0.85) {
+                type = 'battleship'; pattern = 'straight';
+                const alert = document.getElementById('tactical-alert');
+                alert.style.display = 'block';
+                gameScene.time.delayedCall(3000, () => alert.style.display = 'none');
+            } else if (currentWave >= 3 && roll > 0.6) {
+                type = 'cruiser'; pattern = 'seek';
+            }
+
+            let e = enemies.get(x, -50, type);
+            if(e) {
+                e.setActive(true).setVisible(true);
+                e.body.enable = true;
+                e.body.reset(x, -50);
+                e.hp = (type === 'scout' ? 1 : type === 'cruiser' ? 5 : 20) * hpMult;
+                e.points = (type === 'scout' ? 150 : type === 'cruiser' ? 750 : 5000);
+                e.pattern = pattern;
+                e.body.setVelocityY(Phaser.Math.Between(100, 200));
+
+                if(e.shootTimer) e.shootTimer.remove();
+                e.shootTimer = gameScene.time.addEvent({
+                    delay: 2000, loop: true,
+                    callback: () => {
+                        if(e.active && gameActive && !isPaused) {
+                            let eb = enemyBullets.get(e.x, e.y + 20, 'e_bolt');
+                            if(eb) {
+                                eb.setActive(true).setVisible(true).body.enable = true;
+                                eb.body.reset(e.x, e.y+20);
+                                eb.body.setVelocityY(350);
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function damageEnemy(e, amt) {
+            e.hp -= amt;
+            e.setTint(0xff0000);
+            gameScene.time.delayedCall(100, () => { if(e.active) e.clearTint(); });
+            if (e.hp <= 0) {
+                score += (e.points * currentWave);
+                deactivate(e);
+                if (score >= nextWaveScore && !isWaveEnding) triggerWaveEnd();
+            }
+        }
+
+        function hitPlayer(amt) {
+            if (isPaused) return;
+            shields -= amt;
+            gameScene.cameras.main.shake(150, 0.02);
+            if (shields <= 0) {
+                isPaused = true;
+                gameActive = false;
+                document.getElementById('shields').innerText = "SHIELDS: CRITICAL";
+                gameScene.time.delayedCall(2000, () => {
+                    shields = maxShields;
+                    enemies.clear(true, true);
+                    enemyBullets.clear(true, true);
+                    player.setPosition(400, 500);
+                    isPaused = false;
+                    gameActive = true;
+                    // Reset auto-pilot button appearance if needed
+                });
+            }
+        }
+
+        function spawnDeltaFlyer() {
+            let f = allies.get(player.x, 600, 'flyer');
+            if(f) {
+                f.setActive(true).setVisible(true).body.enable = true;
+                f.body.reset(player.x, 600);
+                f.setDrag(600).setDepth(8);
+                document.getElementById('ally-status').innerText = "DELTA FLYER: ONLINE";
+            }
+        }
+
+        function spawnOmega() {
+            allies.clear(true, true);
+            spawnDeltaFlyer();
+            const off = [-180, -90, 90, 180];
+            off.forEach(x => {
+                let s = allies.get(player.x + x, 700, 'escort');
+                if(s) {
+                    s.setActive(true).setVisible(true).body.enable = true;
+                    s.body.reset(player.x + x, 700);
+                    s.setDrag(600).setDepth(8);
+                }
+            });
+            document.getElementById('ally-status').innerText = "TASK FORCE OMEGA: ENGAGED";
+        }
+
+        function handleAllies(time) {
+            allies.children.each(a => {
+                if(!a.active) return;
+                let target = null;
+                enemies.children.each(e => { if(e.active && (!target || e.y > target.y)) target = e; });
+
+                if(target) {
+                    gameScene.physics.moveTo(a, target.x + (Math.sin(time/100)*100), target.y + 150, 350);
+                    if(time > (a.lastFired || 0)) {
+                        fireBolt(a.x, a.y - 10, 0, -700, 'p_bolt', 0x00ccff);
+                        a.lastFired = time + 350;
+                    }
+                } else {
+                    gameScene.physics.moveTo(a, player.x + (Math.sin(time/200)*150), player.y + 80, 200);
+                }
+            });
+        }
+
+        function triggerWaveEnd() {
+            isWaveEnding = true;
+            isPaused = true;
+            gameScene.physics.pause();
+
+            const slots = document.getElementById('upgrade-slots');
+            slots.innerHTML = '';
+
+            let pool = (currentWave >= 5) ? [...UPGRADES, ...ELITE] : [...UPGRADES];
+            pool.sort(() => 0.5 - Math.random());
+
+            pool.slice(0, 3).forEach(u => {
+                let card = document.createElement('div');
+                card.className = `card ${u.elite ? 'elite' : ''}`;
+                card.innerHTML = `<h3>${u.title}</h3><p>${u.desc}</p>`;
+                card.onclick = () => applyUpgrade(u.id);
+                slots.appendChild(card);
+            });
+
+            document.getElementById('decision-overlay').style.display = 'flex';
+        }
+
+        function applyUpgrade(id) {
+            if (id === 'fire') pRate = Math.max(70, pRate - 20);
+            else if (id === 'speed') pAgility += 1.5;
+            else if (id === 'shields') { maxShields += 50; shields = maxShields; }
+            else if (id === 'repair') shields = Math.min(maxShields, shields + (maxShields * 0.5));
+            else if (id === 'torp') tRate += 0.15;
+            else if (id === 'ablative') { maxShields += 250; shields = maxShields; }
+            else if (id === 'spread') tCount = 3;
+            else if (id === 'plasma') sRate = 250;
+
+            currentWave++;
+            threat = currentWave;
+            hpMult += 0.5;
+            formationDelay = Math.max(600, formationDelay - 200);
+            nextWaveScore += (4000 * currentWave);
+
+            if(currentWave === 5) spawnOmega();
+
+            document.getElementById('decision-overlay').style.display = 'none';
+            isWaveEnding = false;
+            isPaused = false;
+            gameScene.physics.resume();
+        }
+
+        function updateUI() {
+            document.getElementById('score').innerText = Math.floor(score);
+            document.getElementById('shields').innerText = `SHIELDS: ${Math.floor((shields/maxShields)*100)}%`;
+            document.getElementById('wave-text').innerText = `WAVE ${currentWave}`;
+            document.getElementById('threat').innerText = `THREAT LEVEL: ${threat}x`;
+            document.getElementById('torpedo-fill').style.width = `${torpedoCharge}%`;
+        }
+
+    </script>
 </body>
 </html>
